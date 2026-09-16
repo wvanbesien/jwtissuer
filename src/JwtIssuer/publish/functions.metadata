@@ -1,0 +1,83 @@
+[
+  {
+    "name": "IssueTokenFunction",
+    "scriptFile": "JwtIssuer.dll",
+    "entryPoint": "JwtIssuer.Functions.IssueTokenFunction.RunAsync",
+    "language": "dotnet-isolated",
+    "properties": {
+      "IsCodeless": false
+    },
+    "bindings": [
+      {
+        "name": "req",
+        "direction": "In",
+        "type": "httpTrigger",
+        "authLevel": "Anonymous",
+        "methods": [
+          "post"
+        ],
+        "route": "token",
+        "properties": {}
+      },
+      {
+        "name": "$return",
+        "type": "http",
+        "direction": "Out"
+      }
+    ]
+  },
+  {
+    "name": "JwksFunction",
+    "scriptFile": "JwtIssuer.dll",
+    "entryPoint": "JwtIssuer.Functions.JwksFunction.RunAsync",
+    "language": "dotnet-isolated",
+    "properties": {
+      "IsCodeless": false
+    },
+    "bindings": [
+      {
+        "name": "req",
+        "direction": "In",
+        "type": "httpTrigger",
+        "authLevel": "Anonymous",
+        "methods": [
+          "get"
+        ],
+        "route": "jwks",
+        "properties": {}
+      },
+      {
+        "name": "$return",
+        "type": "http",
+        "direction": "Out"
+      }
+    ]
+  },
+  {
+    "name": "OidcDiscoveryFunction",
+    "scriptFile": "JwtIssuer.dll",
+    "entryPoint": "JwtIssuer.Functions.OidcDiscoveryFunction.RunAsync",
+    "language": "dotnet-isolated",
+    "properties": {
+      "IsCodeless": false
+    },
+    "bindings": [
+      {
+        "name": "req",
+        "direction": "In",
+        "type": "httpTrigger",
+        "authLevel": "Anonymous",
+        "methods": [
+          "get"
+        ],
+        "route": ".well-known/openid-configuration",
+        "properties": {}
+      },
+      {
+        "name": "$return",
+        "type": "http",
+        "direction": "Out"
+      }
+    ]
+  }
+]

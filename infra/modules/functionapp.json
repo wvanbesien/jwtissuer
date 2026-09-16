@@ -1,0 +1,272 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.46.1.21595",
+      "templateHash": "14127698676121556210"
+    }
+  },
+  "parameters": {
+    "functionAppName": {
+      "type": "string",
+      "metadata": {
+        "description": "Name of the Function App"
+      }
+    },
+    "hostingPlanName": {
+      "type": "string",
+      "metadata": {
+        "description": "Name of the Flex Consumption hosting plan"
+      }
+    },
+    "storageAccountName": {
+      "type": "string",
+      "metadata": {
+        "description": "Name of the Storage Account used by the Function App"
+      }
+    },
+    "location": {
+      "type": "string",
+      "metadata": {
+        "description": "Azure region for all resources"
+      }
+    },
+    "keyVaultUri": {
+      "type": "string",
+      "metadata": {
+        "description": "URI of the Key Vault"
+      }
+    },
+    "certificateName": {
+      "type": "string",
+      "metadata": {
+        "description": "Name of the JWT signing certificate in Key Vault"
+      }
+    },
+    "jwtIssuer": {
+      "type": "string",
+      "metadata": {
+        "description": "Issuer claim value for issued JWTs (typically the Function App URL)"
+      }
+    },
+    "tokenLifetimeMinutes": {
+      "type": "int",
+      "defaultValue": 30,
+      "metadata": {
+        "description": "Token lifetime in minutes"
+      }
+    },
+    "aadTenantId": {
+      "type": "string",
+      "metadata": {
+        "description": "Azure AD tenant ID used for Easy Auth"
+      }
+    },
+    "aadClientId": {
+      "type": "string",
+      "metadata": {
+        "description": "Azure AD application (client) ID for Easy Auth"
+      }
+    },
+    "aadClientSecret": {
+      "type": "securestring",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Client secret for the Azure AD app registration used by Easy Auth (MICROSOFT_PROVIDER_AUTHENTICATION_SECRET). Leave empty if not required."
+      }
+    }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Storage/storageAccounts",
+      "apiVersion": "2023-05-01",
+      "name": "[parameters('storageAccountName')]",
+      "location": "[parameters('location')]",
+      "sku": {
+        "name": "Standard_LRS"
+      },
+      "kind": "StorageV2",
+      "properties": {
+        "supportsHttpsTrafficOnly": true,
+        "minimumTlsVersion": "TLS1_2",
+        "allowBlobPublicAccess": false
+      }
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts/blobServices",
+      "apiVersion": "2023-05-01",
+      "name": "[format('{0}/{1}', parameters('storageAccountName'), 'default')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
+      "apiVersion": "2023-05-01",
+      "name": "[format('{0}/{1}/{2}', parameters('storageAccountName'), 'default', 'deployments')]",
+      "properties": {
+        "publicAccess": "None"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts/blobServices', parameters('storageAccountName'), 'default')]"
+      ]
+    },
+    {
+      "type": "Microsoft.Web/serverfarms",
+      "apiVersion": "2023-12-01",
+      "name": "[parameters('hostingPlanName')]",
+      "location": "[parameters('location')]",
+      "kind": "linux",
+      "sku": {
+        "name": "FC1",
+        "tier": "FlexConsumption"
+      },
+      "properties": {
+        "reserved": true
+      }
+    },
+    {
+      "type": "Microsoft.Web/sites",
+      "apiVersion": "2023-12-01",
+      "name": "[parameters('functionAppName')]",
+      "location": "[parameters('location')]",
+      "kind": "functionapp,linux",
+      "identity": {
+        "type": "SystemAssigned"
+      },
+      "properties": {
+        "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', parameters('hostingPlanName'))]",
+        "httpsOnly": true,
+        "siteConfig": {
+          "ftpsState": "Disabled",
+          "minTlsVersion": "1.2",
+          "appSettings": "[concat(createArray(createObject('name', 'AzureWebJobsStorage__accountName', 'value', parameters('storageAccountName')), createObject('name', 'FUNCTIONS_EXTENSION_VERSION', 'value', '~4'), createObject('name', 'KeyVaultUri', 'value', parameters('keyVaultUri')), createObject('name', 'CertificateName', 'value', parameters('certificateName')), createObject('name', 'JwtIssuer', 'value', parameters('jwtIssuer')), createObject('name', 'TokenLifetimeMinutes', 'value', string(parameters('tokenLifetimeMinutes')))), if(not(empty(parameters('aadClientSecret'))), createArray(createObject('name', 'MICROSOFT_PROVIDER_AUTHENTICATION_SECRET', 'value', parameters('aadClientSecret'))), createArray()))]"
+        },
+        "functionAppConfig": {
+          "deployment": {
+            "storage": {
+              "type": "blobContainer",
+              "value": "[format('{0}deployments', reference(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), '2023-05-01').primaryEndpoints.blob)]",
+              "authentication": {
+                "type": "SystemAssignedIdentity"
+              }
+            }
+          },
+          "scaleAndConcurrency": {
+            "maximumInstanceCount": 100,
+            "instanceMemoryMB": 2048
+          },
+          "runtime": {
+            "name": "dotnet-isolated",
+            "version": "10.0"
+          }
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Web/serverfarms', parameters('hostingPlanName'))]",
+        "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "scope": "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]",
+      "name": "[guid(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), parameters('functionAppName'), 'StorageBlobDataOwner')]",
+      "properties": {
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b7e6dc6d-f1e8-4753-8033-0f276bb0955b')]",
+        "principalId": "[reference(resourceId('Microsoft.Web/sites', parameters('functionAppName')), '2023-12-01', 'full').identity.principalId]",
+        "principalType": "ServicePrincipal"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Web/sites', parameters('functionAppName'))]",
+        "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "scope": "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]",
+      "name": "[guid(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), parameters('functionAppName'), 'StorageQueueDataContributor')]",
+      "properties": {
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '974c5e8b-45b9-4653-ba55-5f855dd0fb88')]",
+        "principalId": "[reference(resourceId('Microsoft.Web/sites', parameters('functionAppName')), '2023-12-01', 'full').identity.principalId]",
+        "principalType": "ServicePrincipal"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Web/sites', parameters('functionAppName'))]",
+        "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "scope": "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]",
+      "name": "[guid(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), parameters('functionAppName'), 'StorageTableDataContributor')]",
+      "properties": {
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3')]",
+        "principalId": "[reference(resourceId('Microsoft.Web/sites', parameters('functionAppName')), '2023-12-01', 'full').identity.principalId]",
+        "principalType": "ServicePrincipal"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Web/sites', parameters('functionAppName'))]",
+        "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Web/sites/config",
+      "apiVersion": "2023-12-01",
+      "name": "[format('{0}/{1}', parameters('functionAppName'), 'authsettingsV2')]",
+      "properties": {
+        "platform": {
+          "enabled": true,
+          "runtimeVersion": "~1"
+        },
+        "globalValidation": {
+          "requireAuthentication": true,
+          "unauthenticatedClientAction": "Return401",
+          "excludedPaths": [
+            "/jwks"
+          ]
+        },
+        "identityProviders": {
+          "azureActiveDirectory": {
+            "enabled": true,
+            "registration": {
+              "openIdIssuer": "[format('https://sts.windows.net/{0}/', parameters('aadTenantId'))]",
+              "clientId": "[parameters('aadClientId')]"
+            },
+            "validation": {
+              "allowedAudiences": [
+                "[format('api://{0}', parameters('aadClientId'))]"
+              ]
+            }
+          }
+        },
+        "login": {
+          "tokenStore": {
+            "enabled": false
+          }
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Web/sites', parameters('functionAppName'))]"
+      ]
+    }
+  ],
+  "outputs": {
+    "functionAppName": {
+      "type": "string",
+      "value": "[parameters('functionAppName')]"
+    },
+    "functionAppUrl": {
+      "type": "string",
+      "value": "[format('https://{0}', reference(resourceId('Microsoft.Web/sites', parameters('functionAppName')), '2023-12-01').defaultHostName)]"
+    },
+    "principalId": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Web/sites', parameters('functionAppName')), '2023-12-01', 'full').identity.principalId]"
+    }
+  }
+}

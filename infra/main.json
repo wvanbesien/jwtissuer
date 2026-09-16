@@ -1,0 +1,710 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.46.1.21595",
+      "templateHash": "2132137556258159820"
+    }
+  },
+  "parameters": {
+    "baseName": {
+      "type": "string",
+      "maxLength": 17,
+      "metadata": {
+        "description": "Base name used to derive resource names (lowercase alphanumeric, max 17 chars)"
+      }
+    },
+    "location": {
+      "type": "string",
+      "defaultValue": "[resourceGroup().location]",
+      "metadata": {
+        "description": "Azure region for all resources"
+      }
+    },
+    "aadTenantId": {
+      "type": "string",
+      "metadata": {
+        "description": "Azure AD tenant ID for Easy Auth"
+      }
+    },
+    "aadClientId": {
+      "type": "string",
+      "metadata": {
+        "description": "Azure AD application (client) ID for Easy Auth"
+      }
+    },
+    "tokenLifetimeMinutes": {
+      "type": "int",
+      "defaultValue": 30,
+      "metadata": {
+        "description": "Token lifetime in minutes"
+      }
+    },
+    "certificateName": {
+      "type": "string",
+      "defaultValue": "jwt-signing-cert",
+      "metadata": {
+        "description": "Name of the self-signed certificate in Key Vault"
+      }
+    },
+    "certificateValidityMonths": {
+      "type": "int",
+      "defaultValue": 12,
+      "metadata": {
+        "description": "Certificate validity period in months"
+      }
+    },
+    "renewDaysBeforeExpiry": {
+      "type": "int",
+      "defaultValue": 30,
+      "metadata": {
+        "description": "Days before expiry at which auto-renewal triggers"
+      }
+    },
+    "logRetentionDays": {
+      "type": "int",
+      "defaultValue": 90,
+      "minValue": 30,
+      "maxValue": 730,
+      "metadata": {
+        "description": "Retention period in days for Log Analytics / Application Insights (30–730)"
+      }
+    }
+  },
+  "variables": {
+    "keyVaultName": "[format('kv-{0}', parameters('baseName'))]",
+    "functionAppName": "[format('func-{0}', parameters('baseName'))]",
+    "hostingPlanName": "[format('asp-{0}', parameters('baseName'))]",
+    "storageAccountName": "[format('st{0}', replace(parameters('baseName'), '-', ''))]",
+    "logAnalyticsName": "[format('law-{0}', parameters('baseName'))]",
+    "appInsightsName": "[format('appi-{0}', parameters('baseName'))]",
+    "keyVaultUri": "[format('https://{0}{1}/', variables('keyVaultName'), environment().suffixes.keyvaultDns)]",
+    "functionAppUrl": "[format('https://{0}.azurewebsites.net', variables('functionAppName'))]"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "deploy-monitoring",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "logAnalyticsName": {
+            "value": "[variables('logAnalyticsName')]"
+          },
+          "appInsightsName": {
+            "value": "[variables('appInsightsName')]"
+          },
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "retentionInDays": {
+            "value": "[parameters('logRetentionDays')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.46.1.21595",
+              "templateHash": "6672973651178274294"
+            }
+          },
+          "parameters": {
+            "logAnalyticsName": {
+              "type": "string",
+              "metadata": {
+                "description": "Name for the Log Analytics workspace"
+              }
+            },
+            "appInsightsName": {
+              "type": "string",
+              "metadata": {
+                "description": "Name for the Application Insights component"
+              }
+            },
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure region"
+              }
+            },
+            "retentionInDays": {
+              "type": "int",
+              "defaultValue": 90,
+              "minValue": 30,
+              "maxValue": 730,
+              "metadata": {
+                "description": "Data retention period in days (30–730). 90 days covers ~3 months of usage trends."
+              }
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.OperationalInsights/workspaces",
+              "apiVersion": "2023-09-01",
+              "name": "[parameters('logAnalyticsName')]",
+              "location": "[parameters('location')]",
+              "properties": {
+                "sku": {
+                  "name": "PerGB2018"
+                },
+                "retentionInDays": "[parameters('retentionInDays')]"
+              }
+            },
+            {
+              "type": "Microsoft.Insights/components",
+              "apiVersion": "2020-02-02",
+              "name": "[parameters('appInsightsName')]",
+              "location": "[parameters('location')]",
+              "kind": "web",
+              "properties": {
+                "Application_Type": "web",
+                "WorkspaceResourceId": "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('logAnalyticsName'))]"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('logAnalyticsName'))]"
+              ]
+            }
+          ],
+          "outputs": {
+            "connectionString": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.Insights/components', parameters('appInsightsName')), '2020-02-02').ConnectionString]"
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "deploy-functionapp",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "functionAppName": {
+            "value": "[variables('functionAppName')]"
+          },
+          "hostingPlanName": {
+            "value": "[variables('hostingPlanName')]"
+          },
+          "storageAccountName": {
+            "value": "[variables('storageAccountName')]"
+          },
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "keyVaultUri": {
+            "value": "[variables('keyVaultUri')]"
+          },
+          "certificateName": {
+            "value": "[parameters('certificateName')]"
+          },
+          "jwtIssuer": {
+            "value": "[variables('functionAppUrl')]"
+          },
+          "tokenLifetimeMinutes": {
+            "value": "[parameters('tokenLifetimeMinutes')]"
+          },
+          "aadTenantId": {
+            "value": "[parameters('aadTenantId')]"
+          },
+          "aadClientId": {
+            "value": "[parameters('aadClientId')]"
+          },
+          "appInsightsConnectionString": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'deploy-monitoring'), '2025-04-01').outputs.connectionString.value]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.46.1.21595",
+              "templateHash": "9513935574490626033"
+            }
+          },
+          "parameters": {
+            "functionAppName": {
+              "type": "string",
+              "metadata": {
+                "description": "Name of the Function App"
+              }
+            },
+            "hostingPlanName": {
+              "type": "string",
+              "metadata": {
+                "description": "Name of the Flex Consumption hosting plan"
+              }
+            },
+            "storageAccountName": {
+              "type": "string",
+              "metadata": {
+                "description": "Name of the Storage Account used by the Function App"
+              }
+            },
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure region for all resources"
+              }
+            },
+            "keyVaultUri": {
+              "type": "string",
+              "metadata": {
+                "description": "URI of the Key Vault"
+              }
+            },
+            "certificateName": {
+              "type": "string",
+              "metadata": {
+                "description": "Name of the JWT signing certificate in Key Vault"
+              }
+            },
+            "jwtIssuer": {
+              "type": "string",
+              "metadata": {
+                "description": "Issuer claim value for issued JWTs (typically the Function App URL)"
+              }
+            },
+            "tokenLifetimeMinutes": {
+              "type": "int",
+              "defaultValue": 30,
+              "metadata": {
+                "description": "Token lifetime in minutes"
+              }
+            },
+            "aadTenantId": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure AD tenant ID used for Easy Auth"
+              }
+            },
+            "aadClientId": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure AD application (client) ID for Easy Auth"
+              }
+            },
+            "appInsightsConnectionString": {
+              "type": "string",
+              "metadata": {
+                "description": "Application Insights connection string"
+              }
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Storage/storageAccounts",
+              "apiVersion": "2023-05-01",
+              "name": "[parameters('storageAccountName')]",
+              "location": "[parameters('location')]",
+              "sku": {
+                "name": "Standard_LRS"
+              },
+              "kind": "StorageV2",
+              "properties": {
+                "supportsHttpsTrafficOnly": true,
+                "minimumTlsVersion": "TLS1_2",
+                "allowBlobPublicAccess": false
+              }
+            },
+            {
+              "type": "Microsoft.Storage/storageAccounts/blobServices",
+              "apiVersion": "2023-05-01",
+              "name": "[format('{0}/{1}', parameters('storageAccountName'), 'default')]",
+              "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
+              "apiVersion": "2023-05-01",
+              "name": "[format('{0}/{1}/{2}', parameters('storageAccountName'), 'default', 'deployments')]",
+              "properties": {
+                "publicAccess": "None"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts/blobServices', parameters('storageAccountName'), 'default')]"
+              ]
+            },
+            {
+              "type": "Microsoft.Web/serverfarms",
+              "apiVersion": "2023-12-01",
+              "name": "[parameters('hostingPlanName')]",
+              "location": "[parameters('location')]",
+              "kind": "linux",
+              "sku": {
+                "name": "FC1",
+                "tier": "FlexConsumption"
+              },
+              "properties": {
+                "reserved": true
+              }
+            },
+            {
+              "type": "Microsoft.Web/sites",
+              "apiVersion": "2023-12-01",
+              "name": "[parameters('functionAppName')]",
+              "location": "[parameters('location')]",
+              "kind": "functionapp,linux",
+              "identity": {
+                "type": "SystemAssigned"
+              },
+              "properties": {
+                "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', parameters('hostingPlanName'))]",
+                "httpsOnly": true,
+                "siteConfig": {
+                  "ftpsState": "Disabled",
+                  "minTlsVersion": "1.2",
+                  "appSettings": [
+                    {
+                      "name": "APPLICATIONINSIGHTS_CONNECTION_STRING",
+                      "value": "[parameters('appInsightsConnectionString')]"
+                    },
+                    {
+                      "name": "AzureWebJobsStorage__accountName",
+                      "value": "[parameters('storageAccountName')]"
+                    },
+                    {
+                      "name": "FUNCTIONS_EXTENSION_VERSION",
+                      "value": "~4"
+                    },
+                    {
+                      "name": "KeyVaultUri",
+                      "value": "[parameters('keyVaultUri')]"
+                    },
+                    {
+                      "name": "CertificateName",
+                      "value": "[parameters('certificateName')]"
+                    },
+                    {
+                      "name": "JwtIssuer",
+                      "value": "[parameters('jwtIssuer')]"
+                    },
+                    {
+                      "name": "TokenLifetimeMinutes",
+                      "value": "[string(parameters('tokenLifetimeMinutes'))]"
+                    }
+                  ]
+                },
+                "functionAppConfig": {
+                  "deployment": {
+                    "storage": {
+                      "type": "blobContainer",
+                      "value": "[format('{0}deployments', reference(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), '2023-05-01').primaryEndpoints.blob)]",
+                      "authentication": {
+                        "type": "SystemAssignedIdentity"
+                      }
+                    }
+                  },
+                  "scaleAndConcurrency": {
+                    "alwaysReady": [],
+                    "maximumInstanceCount": 100,
+                    "instanceMemoryMB": 2048
+                  },
+                  "runtime": {
+                    "name": "dotnet-isolated",
+                    "version": "10.0"
+                  }
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Web/serverfarms', parameters('hostingPlanName'))]",
+                "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "scope": "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]",
+              "name": "[guid(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), parameters('functionAppName'), 'StorageBlobDataOwner')]",
+              "properties": {
+                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b7e6dc6d-f1e8-4753-8033-0f276bb0955b')]",
+                "principalId": "[reference(resourceId('Microsoft.Web/sites', parameters('functionAppName')), '2023-12-01', 'full').identity.principalId]",
+                "principalType": "ServicePrincipal"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Web/sites', parameters('functionAppName'))]",
+                "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "scope": "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]",
+              "name": "[guid(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), parameters('functionAppName'), 'StorageQueueDataContributor')]",
+              "properties": {
+                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '974c5e8b-45b9-4653-ba55-5f855dd0fb88')]",
+                "principalId": "[reference(resourceId('Microsoft.Web/sites', parameters('functionAppName')), '2023-12-01', 'full').identity.principalId]",
+                "principalType": "ServicePrincipal"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Web/sites', parameters('functionAppName'))]",
+                "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "scope": "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]",
+              "name": "[guid(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), parameters('functionAppName'), 'StorageTableDataContributor')]",
+              "properties": {
+                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3')]",
+                "principalId": "[reference(resourceId('Microsoft.Web/sites', parameters('functionAppName')), '2023-12-01', 'full').identity.principalId]",
+                "principalType": "ServicePrincipal"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Web/sites', parameters('functionAppName'))]",
+                "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Web/sites/config",
+              "apiVersion": "2023-12-01",
+              "name": "[format('{0}/{1}', parameters('functionAppName'), 'authsettingsV2')]",
+              "properties": {
+                "platform": {
+                  "enabled": true,
+                  "runtimeVersion": "~1"
+                },
+                "globalValidation": {
+                  "requireAuthentication": true,
+                  "unauthenticatedClientAction": "Return401",
+                  "excludedPaths": [
+                    "/jwks",
+                    "/.well-known/openid-configuration"
+                  ]
+                },
+                "identityProviders": {
+                  "azureActiveDirectory": {
+                    "enabled": true,
+                    "registration": {
+                      "openIdIssuer": "[format('https://sts.windows.net/{0}/', parameters('aadTenantId'))]",
+                      "clientId": "[parameters('aadClientId')]"
+                    },
+                    "validation": {
+                      "allowedAudiences": [
+                        "[format('api://{0}', parameters('aadClientId'))]"
+                      ]
+                    }
+                  }
+                },
+                "login": {
+                  "tokenStore": {
+                    "enabled": false
+                  }
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Web/sites', parameters('functionAppName'))]"
+              ]
+            }
+          ],
+          "outputs": {
+            "functionAppName": {
+              "type": "string",
+              "value": "[parameters('functionAppName')]"
+            },
+            "functionAppUrl": {
+              "type": "string",
+              "value": "[format('https://{0}', reference(resourceId('Microsoft.Web/sites', parameters('functionAppName')), '2023-12-01').defaultHostName)]"
+            },
+            "principalId": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.Web/sites', parameters('functionAppName')), '2023-12-01', 'full').identity.principalId]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Resources/deployments', 'deploy-monitoring')]"
+      ]
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "deploy-keyvault",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "keyVaultName": {
+            "value": "[variables('keyVaultName')]"
+          },
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "functionAppPrincipalId": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'deploy-functionapp'), '2025-04-01').outputs.principalId.value]"
+          },
+          "certificateName": {
+            "value": "[parameters('certificateName')]"
+          },
+          "certificateValidityMonths": {
+            "value": "[parameters('certificateValidityMonths')]"
+          },
+          "renewDaysBeforeExpiry": {
+            "value": "[parameters('renewDaysBeforeExpiry')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.46.1.21595",
+              "templateHash": "11647960056184297326"
+            }
+          },
+          "parameters": {
+            "keyVaultName": {
+              "type": "string",
+              "metadata": {
+                "description": "Name of the Key Vault"
+              }
+            },
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure region for all resources"
+              }
+            },
+            "functionAppPrincipalId": {
+              "type": "string",
+              "metadata": {
+                "description": "Principal ID of the resource that needs crypto + certificate access (Function App managed identity)"
+              }
+            },
+            "certificateName": {
+              "type": "string",
+              "defaultValue": "jwt-signing-cert",
+              "metadata": {
+                "description": "Name of the self-signed JWT signing certificate"
+              }
+            },
+            "certificateValidityMonths": {
+              "type": "int",
+              "defaultValue": 12,
+              "metadata": {
+                "description": "Certificate validity period in months (used by the post-deploy cert creation script)"
+              }
+            },
+            "renewDaysBeforeExpiry": {
+              "type": "int",
+              "defaultValue": 30,
+              "metadata": {
+                "description": "Days before expiry at which auto-renewal triggers (used by post-deploy cert creation script)"
+              }
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.KeyVault/vaults",
+              "apiVersion": "2023-07-01",
+              "name": "[parameters('keyVaultName')]",
+              "location": "[parameters('location')]",
+              "properties": {
+                "sku": {
+                  "family": "A",
+                  "name": "standard"
+                },
+                "tenantId": "[subscription().tenantId]",
+                "enableRbacAuthorization": true,
+                "enableSoftDelete": true,
+                "softDeleteRetentionInDays": 90,
+                "enabledForDeployment": false,
+                "enabledForDiskEncryption": false,
+                "enabledForTemplateDeployment": false,
+                "publicNetworkAccess": "Enabled"
+              }
+            },
+            {
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "scope": "[resourceId('Microsoft.KeyVault/vaults', parameters('keyVaultName'))]",
+              "name": "[guid(resourceId('Microsoft.KeyVault/vaults', parameters('keyVaultName')), parameters('functionAppPrincipalId'), 'Key Vault Certificate User')]",
+              "properties": {
+                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'db79e9a7-68ee-4b58-9aeb-b90e7c24fcba')]",
+                "principalId": "[parameters('functionAppPrincipalId')]",
+                "principalType": "ServicePrincipal"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.KeyVault/vaults', parameters('keyVaultName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "scope": "[resourceId('Microsoft.KeyVault/vaults', parameters('keyVaultName'))]",
+              "name": "[guid(resourceId('Microsoft.KeyVault/vaults', parameters('keyVaultName')), parameters('functionAppPrincipalId'), 'Key Vault Crypto User')]",
+              "properties": {
+                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '12338af0-0e69-4776-bea7-57ae8d297424')]",
+                "principalId": "[parameters('functionAppPrincipalId')]",
+                "principalType": "ServicePrincipal"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.KeyVault/vaults', parameters('keyVaultName'))]"
+              ]
+            }
+          ],
+          "outputs": {
+            "keyVaultUri": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.KeyVault/vaults', parameters('keyVaultName')), '2023-07-01').vaultUri]"
+            },
+            "certificateName": {
+              "type": "string",
+              "value": "[parameters('certificateName')]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Resources/deployments', 'deploy-functionapp')]"
+      ]
+    }
+  ],
+  "outputs": {
+    "functionAppUrl": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'deploy-functionapp'), '2025-04-01').outputs.functionAppUrl.value]"
+    },
+    "tokenEndpoint": {
+      "type": "string",
+      "value": "[format('{0}/token', reference(resourceId('Microsoft.Resources/deployments', 'deploy-functionapp'), '2025-04-01').outputs.functionAppUrl.value)]"
+    },
+    "jwksEndpoint": {
+      "type": "string",
+      "value": "[format('{0}/jwks', reference(resourceId('Microsoft.Resources/deployments', 'deploy-functionapp'), '2025-04-01').outputs.functionAppUrl.value)]"
+    },
+    "oidcDiscoveryEndpoint": {
+      "type": "string",
+      "value": "[format('{0}/.well-known/openid-configuration', reference(resourceId('Microsoft.Resources/deployments', 'deploy-functionapp'), '2025-04-01').outputs.functionAppUrl.value)]"
+    },
+    "keyVaultUri": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'deploy-keyvault'), '2025-04-01').outputs.keyVaultUri.value]"
+    },
+    "appInsightsName": {
+      "type": "string",
+      "value": "[variables('appInsightsName')]"
+    }
+  }
+}

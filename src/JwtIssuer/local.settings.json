@@ -1,0 +1,11 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+    "FUNCTIONS_WORKER_RUNTIME": "dotnet-isolated",
+    "KeyVaultUri": "https://<your-vault-name>.vault.azure.net/",
+    "CertificateName": "jwt-signing-cert",
+    "JwtIssuer": "https://<your-function-app>.azurewebsites.net",
+    "TokenLifetimeMinutes": "30"
+  }
+}
