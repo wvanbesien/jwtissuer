@@ -1,6 +1,6 @@
 # JWT Issuer — Azure Function
 
-## Problem we're solving
+## The problem we're solving
 
 Devices with managed identities in Azure or Azure ARC can request JWT tokens for applications. While normally JWT tokens issued by Entra ID have an expiry of between 60~90mins, for managed identities the expiry is 24h, and this doesn't appear to be something that can be changed. 
 
