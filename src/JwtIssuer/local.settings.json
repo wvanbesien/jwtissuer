@@ -3,9 +3,11 @@
   "Values": {
     "AzureWebJobsStorage": "UseDevelopmentStorage=true",
     "FUNCTIONS_WORKER_RUNTIME": "dotnet-isolated",
-    "KeyVaultUri": "https://<your-vault-name>.vault.azure.net/",
+    "KeyVaultUri": "https://kv-jwtissuer.vault.azure.net/",
     "CertificateName": "jwt-signing-cert",
-    "JwtIssuer": "https://<your-function-app>.azurewebsites.net",
-    "TokenLifetimeMinutes": "30"
+    "JwtIssuer": "https://func-jwtissuer.azurewebsites.net",
+    "TokenLifetimeMinutes": "30",
+    "TokenAudience": "api://38a0c48b-b199-4b57-9d90-003b13ee16bf",
+    "UseJwtSubject": "true"
   }
 }

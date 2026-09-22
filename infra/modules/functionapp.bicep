@@ -22,6 +22,20 @@ param jwtIssuer string
 @description('Token lifetime in minutes')
 param tokenLifetimeMinutes int = 30
 
+@description('''
+When non-empty, the audience value in the token request body is ignored and this value
+is used instead. The incoming (Easy-Auth-validated) JWT must carry this same value in its
+aud claim, providing an additional per-request audience check.
+Leave empty to let callers supply the audience in the request body.
+''')
+param tokenAudience string = ''
+
+@description('''
+When true, the subject value in the token request body is ignored and the sub claim from
+the incoming Easy-Auth-validated JWT is used as the subject of the issued token instead.
+''')
+param useJwtSubject bool = false
+
 @description('Azure AD tenant ID used for Easy Auth')
 param aadTenantId string
 
@@ -118,9 +132,17 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
           value: jwtIssuer
         }
         {
-          name: 'TokenLifetimeMinutes'
-          value: string(tokenLifetimeMinutes)
-        }
+            name: 'TokenLifetimeMinutes'
+            value: string(tokenLifetimeMinutes)
+          }
+          {
+            name: 'TokenAudience'
+            value: tokenAudience
+          }
+          {
+            name: 'UseJwtSubject'
+            value: string(useJwtSubject)
+          }
       ]
     }
     functionAppConfig: {

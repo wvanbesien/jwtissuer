@@ -16,6 +16,12 @@ param aadClientId string
 @description('Token lifetime in minutes')
 param tokenLifetimeMinutes int = 30
 
+@description('Hard-code the issued token audience and require it on the incoming JWT. Leave empty to accept a caller-supplied value.')
+param tokenAudience string = ''
+
+@description('When true, use the sub claim from the incoming JWT as the issued token subject instead of the request body value.')
+param useJwtSubject bool = false
+
 @description('Name of the self-signed certificate in Key Vault')
 param certificateName string = 'jwt-signing-cert'
 
@@ -67,6 +73,8 @@ module functionAppModule 'modules/functionapp.bicep' = {
     certificateName: certificateName
     jwtIssuer: functionAppUrl
     tokenLifetimeMinutes: tokenLifetimeMinutes
+    tokenAudience: tokenAudience
+    useJwtSubject: useJwtSubject
     aadTenantId: aadTenantId
     aadClientId: aadClientId
     appInsightsConnectionString: monitoringModule.outputs.connectionString
